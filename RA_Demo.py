@@ -7,14 +7,14 @@ import time
 
 # Config
 #------------------------------------------------------------------------------------------
-BLOB_PATH = "/home/robotics-3/.cache/blobconverter/best_openvino_2022.1_6shave.blob"
+BLOB_PATH = "/home/robotics-3/.cache/blobconverter/best_openvino_2022.1_5shave.blob"
 
 IMG_SIZE = 640
-CONF_THRESH = 0.35
-IOU_THRESH = 0.45
+CONF_THRESH = 0.4
+IOU_THRESH = 0.5
 
-# NOTE: your current blob is 1-class (output [1, 6, 8400]),
-# so only CLASS_NAMES[0] will be used for now.
+MAX_DETS = 20
+
 CLASS_NAMES = ["End_Effector", "Robot_Arm"]
 #------------------------------------------------------------------------------------------
 
@@ -59,69 +59,77 @@ def nms(boxes, scores, iou_thres):
 
     return keep
 
-# YOLOv8 output decoding
 #------------------------------------------------------------------------------------------
 def decode_yolov8(output_flat, img_w, img_h):
     """
-    Model output shape: [1, 6, 8400]
-    For each of the 8400 predictions:
-        (cx, cy, w, h, obj_conf, cls_conf)
-    Assumes values are normalized to 0–1 relative to input size.
+    ONNX output shape: [1, 6, 8400]
+    Per candidate:
+        [cx_px, cy_px, w_px, h_px, score_cls0, score_cls1]
+    where scores are already in [0, 1].
     """
-    output = np.array(output_flat, dtype=np.float32)
 
-    # 1 * 6 * 8400 = 50400
-    output = output.reshape(1, 6, -1)
-    output = np.squeeze(output, axis=0)      # [6, 8400]
-    output = output.transpose(1, 0)          # [8400, 6]
+    # (1, 6, 8400) -> (6, 8400) -> (8400, 6)
+    data = np.array(output_flat, dtype=np.float32).reshape(6, -1).transpose(1, 0)
 
-    boxes_xyxy = []
-    scores = []
-    classes = []
+    cx = data[:, 0]
+    cy = data[:, 1]
+    w  = data[:, 2]
+    h  = data[:, 3]
 
-    for det in output:
-        cx, cy, w, h, obj_conf, cls_conf = det
-        conf = obj_conf * cls_conf
-        if conf < CONF_THRESH:
-            continue
+    # class scores (already probabilities)
+    scores = data[:, 4:]           # shape (8400, 2)
 
-        # Convert normalized (cx, cy, w, h) -> absolute xyxy in image space
-        cx_abs = cx * img_w
-        cy_abs = cy * img_h
-        w_abs = w * img_w
-        h_abs = h * img_h
+    # choose best class per box
+    cls_ids   = np.argmax(scores, axis=1)
+    cls_confs = scores[np.arange(len(scores)), cls_ids]
 
-        x1 = cx_abs - w_abs / 2
-        y1 = cy_abs - h_abs / 2
-        x2 = cx_abs + w_abs / 2
-        y2 = cy_abs + h_abs / 2
-
-        boxes_xyxy.append([x1, y1, x2, y2])
-        scores.append(float(conf))
-        classes.append(0)  # single class for this blob
-
-    if not boxes_xyxy:
+    # 1) confidence filter
+    mask = cls_confs > CONF_THRESH
+    if not np.any(mask):
         return []
 
-    keep = nms(boxes_xyxy, scores, IOU_THRESH)
+    indices = np.where(mask)[0]
+
+    # 2) top-K filter
+    if indices.size > MAX_DETS:
+        indices = indices[np.argsort(cls_confs[indices])[-MAX_DETS:]]
+
+    cx = cx[indices]
+    cy = cy[indices]
+    w  = w[indices]
+    h  = h[indices]
+    cls_ids   = cls_ids[indices]
+    cls_confs = cls_confs[indices]
+
+    # 3) convert cx,cy,w,h (pixels) -> x1,y1,x2,y2
+    x1 = cx - w / 2
+    y1 = cy - h / 2
+    x2 = cx + w / 2
+    y2 = cy + h / 2
+
+    # 4) clip to image bounds
+    x1 = np.clip(x1, 0, img_w - 1)
+    y1 = np.clip(y1, 0, img_h - 1)
+    x2 = np.clip(x2, 0, img_w - 1)
+    y2 = np.clip(y2, 0, img_h - 1)
+
+    boxes = np.stack([x1, y1, x2, y2], axis=1)
+
+    # 5) NMS
+    keep = nms(boxes.tolist(), cls_confs.tolist(), IOU_THRESH)
 
     detections = []
     for i in keep:
-        x1, y1, x2, y2 = boxes_xyxy[i]
-        conf = scores[i]
-        cls_id = classes[i]
-
-        x1 = max(0, min(img_w - 1, int(x1)))
-        y1 = max(0, min(img_h - 1, int(y1)))
-        x2 = max(0, min(img_w - 1, int(x2)))
-        y2 = max(0, min(img_h - 1, int(y2)))
-
         detections.append({
-            "bbox": (x1, y1, x2, y2),
-            "conf": conf,
-            "cls": cls_id
+            "bbox": (
+                int(boxes[i][0]),
+                int(boxes[i][1]),
+                int(boxes[i][2]),
+                int(boxes[i][3]),
+            ),
+            "conf": float(cls_confs[i]),
+            "cls":  int(cls_ids[i]),
         })
-
     return detections
 
 # Build DepthAI pipeline (DepthAI 2.x API)
@@ -149,7 +157,7 @@ def create_pipeline():
     # Stereo depth node
     # - - - - - - - - - - - - - -
     stereo = pipeline.createStereoDepth()
-    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.DEFAULT)
     stereo.setSubpixel(True)
     stereo.setLeftRightCheck(True)
     stereo.setExtendedDisparity(False)
@@ -245,7 +253,6 @@ def main():
             cv2.imshow("YOLOv8 + Depth (OAK-D-W, DepthAI 2.x)", frame)
             if cv2.waitKey(1) == ord('q'):
                 break
-
 
 if __name__ == "__main__":
     main()
