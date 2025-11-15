@@ -58,39 +58,46 @@ def nms(boxes, scores, iou_thres):
         order = order[inds + 1]
 
     return keep
-
+    
+#------------------------------------------------------------------------------------------
+# YOLOv8 Decoder
 #------------------------------------------------------------------------------------------
 def decode_yolov8(output_flat, img_w, img_h):
     """
     ONNX output shape: [1, 6, 8400]
-    Per candidate:
-        [cx_px, cy_px, w_px, h_px, score_cls0, score_cls1]
-    where scores are already in [0, 1].
-    """
+    Flattened length: 6 * 8400 = 50400
 
+    Layout per anchor i:
+        [cx_px, cy_px, w_px, h_px, logit_cls0, logit_cls1]
+    where:
+        - coordinates are already in pixel units
+        - last 2 values are logits (need sigmoid)
+    """
     # (1, 6, 8400) -> (6, 8400) -> (8400, 6)
     data = np.array(output_flat, dtype=np.float32).reshape(6, -1).transpose(1, 0)
 
+    # Split channels
     cx = data[:, 0]
     cy = data[:, 1]
     w  = data[:, 2]
     h  = data[:, 3]
+    logits = data[:, 4:]             # shape (8400, 2)
 
-    # class scores (already probabilities)
-    scores = data[:, 4:]           # shape (8400, 2)
+    # Class probabilities (single sigmoid, not softmax)
+    probs = 1.0 / (1.0 + np.exp(-logits))
 
-    # choose best class per box
-    cls_ids   = np.argmax(scores, axis=1)
-    cls_confs = scores[np.arange(len(scores)), cls_ids]
+    # Best class and its score
+    cls_ids   = np.argmax(probs, axis=1)
+    cls_confs = probs[np.arange(len(probs)), cls_ids]
 
-    # 1) confidence filter
+    # 1) Confidence filter
     mask = cls_confs > CONF_THRESH
     if not np.any(mask):
         return []
 
     indices = np.where(mask)[0]
 
-    # 2) top-K filter
+    # 2) Keep only top-K by confidence to avoid NMS over 8400 boxes
     if indices.size > MAX_DETS:
         indices = indices[np.argsort(cls_confs[indices])[-MAX_DETS:]]
 
@@ -101,13 +108,13 @@ def decode_yolov8(output_flat, img_w, img_h):
     cls_ids   = cls_ids[indices]
     cls_confs = cls_confs[indices]
 
-    # 3) convert cx,cy,w,h (pixels) -> x1,y1,x2,y2
+    # 3) Convert pixel cx,cy,w,h -> xyxy
     x1 = cx - w / 2
     y1 = cy - h / 2
     x2 = cx + w / 2
     y2 = cy + h / 2
 
-    # 4) clip to image bounds
+    # 4) Clip to image bounds
     x1 = np.clip(x1, 0, img_w - 1)
     y1 = np.clip(y1, 0, img_h - 1)
     x2 = np.clip(x2, 0, img_w - 1)
