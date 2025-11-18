@@ -10,7 +10,7 @@ from ultralytics import YOLO
 
 MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt" # path to yolov8 model
 N_FRAMES   = 300 # number of frames for test
-CONF_THRES = 0.8 # confidence threshold
+CONF_THRES = 0.9 # confidence threshold
 SHOW_WINDOW = True # False for headless testing
 
 threshold_ok = True # Confidence Threshold >= 0.9
