@@ -8,26 +8,26 @@ from ultralytics import YOLO
 # CONFIG
 # ---------------------------
 
-MODEL_PATH = "yolov8s.pt" # path to yolov8 model
+MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt" # path to yolov8 model
 N_FRAMES   = 300 # number of frames for test
 CONF_THRES = 0.9 # confidence threshold
 SHOW_WINDOW = True # False for headless testing
 
 # Map YOLO class IDs to class names
 CLASS_ID_TO_NAME = {
-    0: "Robot_Arm",
-    1: "End_Effector",
-    2: "Block_Blue",
-    3: "Block_Red",
-    4: "Block_Green",
+    0: "Block_Blue",
+    1: "Block_Green",
+    2: "Block_Red",
+    3: "End_Effector"
+    4: "Robot_Arm",
 }
 
 ALL_CLASSES = [
-    "Robot_Arm",
-    "End_Effector",
     "Block_Blue",
-    "Block_Red",
     "Block_Green",
+    "Block_Red",
+    "End_Effector",
+    "Robot_Arm"
 ]
 
 # ---------------------------
