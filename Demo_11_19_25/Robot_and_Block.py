@@ -8,12 +8,12 @@ from ultralytics import YOLO
 
 # Config
 #------------------------------------------------------------------------------------------
-MODEL_PATH = "/home/robotics-3/Desktop/Models/runs/detect/train3/weights/best.pt"
+MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt"
 
 IMG_SIZE = 640
 CONF_THRESH = 0.4
 
-CLASS_NAMES = ["End_Effector", "Robot_Arm", "Block_Blue", "Block_Green", "Block_Red"]
+CLASS_NAMES = ["Block_Blue", "Block_Green", "Block_Red", "End_Effector", "Robot_Arm"]
 #------------------------------------------------------------------------------------------
 
 # Build DepthAI pipeline (RGB + Depth only, NO NN on device)
