@@ -11,7 +11,7 @@ from ultralytics import YOLO
 MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt"
 
 IMG_SIZE = 640
-CONF_THRESH = 0.4
+CONF_THRESH = 0.60
 
 CLASS_NAMES = ["Block_Blue", "Block_Green", "Block_Red", "End_Effector", "Robot_Arm"]
 #------------------------------------------------------------------------------------------
@@ -125,24 +125,16 @@ def main():
                 conf = det["conf"]
                 cls_id = det["cls"]
                 label = CLASS_NAMES[cls_id] if 0 <= cls_id < len(CLASS_NAMES) else str(cls_id)
-
-                # Depth inside bbox (median of valid pixels)
-                roi = depth[y1:y2, x1:x2]
-                z_m = 0.0
-                if roi.size > 0:
-                    valid = roi[roi > 0]
-                    if valid.size > 0:
-                        z_m = float(np.median(valid)) / 1000.0  # mm -> m
-
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                text = f"{label} {conf:.2f} {z_m:.2f}m"
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                text = F"{label} {conf:.2f}"
+		#text = f"{label} {conf:.2f} {z_m:.2f}m"
                 cv2.putText(
                     frame,
                     text,
                     (x1, max(0, y1 - 5)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (0, 255, 0),
+                    (0, 255, 255),
                     1,
                     cv2.LINE_AA
                 )
@@ -158,7 +150,7 @@ def main():
             cv2.putText(frame, f"FPS: {fps:.1f}", (10, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-            cv2.imshow("YOLOv8 on Host + Depth (OAK-D-W)", frame)
+            cv2.imshow("YOLOv8 on Host", frame)
             if cv2.waitKey(1) == ord('q'):
                 break
 
