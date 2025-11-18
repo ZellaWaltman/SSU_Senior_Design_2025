@@ -10,15 +10,21 @@ from ultralytics import YOLO
 
 MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt" # path to yolov8 model
 N_FRAMES   = 300 # number of frames for test
-CONF_THRES = 0.9 # confidence threshold
+CONF_THRES = 0.8 # confidence threshold
 SHOW_WINDOW = True # False for headless testing
+
+threshold_ok = True # Confidence Threshold >= 0.9
+
+# Confidence threshold check: if < 0.9, fails
+if CONF_THRES < 0.9:
+    threshold_ok = False
 
 # Map YOLO class IDs to class names
 CLASS_ID_TO_NAME = {
     0: "Block_Blue",
     1: "Block_Green",
     2: "Block_Red",
-    3: "End_Effector"
+    3: "End_Effector",
     4: "Robot_Arm",
 }
 
@@ -76,7 +82,7 @@ cam_rgb.preview.link(xout.input)
 # ---------------------------
 # Run device + test loop
 # ---------------------------
-with dai.Device(pipeline) as device
+with dai.Device(pipeline) as device:
     # Queue size = 4, will store 4 frames
     # maxSize=4, blocking=False avoids app stalling if one stream lags; old frames drop instead
     q_rgb = device.getOutputQueue(name="rgb", maxSize=4, blocking=False)
@@ -92,8 +98,9 @@ with dai.Device(pipeline) as device
         results = model.predict(
             source=frame,
             conf=CONF_THRES,
-            verbose=False # Do not print intenal logs each time
-        )
+            verbose=False, # Do not print intenal logs each time
+            device="cpu" # No GPUs on the computer
+	)
 
         # Collect predicted classes for the frame
         pred_classes = []
@@ -146,7 +153,9 @@ if SHOW_WINDOW:
 # Compute Recall
 # ---------------------------
 
-print("\n===== RECALL RESULTS =====")
+print("\nRECALL RESULTS:")
+print("------------------------------------------\n")
+
 
 # Initialize TP & FN counts
 overall_TP = 0
@@ -173,7 +182,7 @@ for cname in ALL_CLASSES:
     overall_FN += fn
 
     # Print Results
-    print(f"- {cname}:")
+    print(f"{cname}:")
     print(f"    TP = {tp}, FN = {fn}, FP = {fp}, GT instances = {total_gt}")
     print(f"    Recall = {recall_pct:.2f}%")
 
@@ -192,10 +201,14 @@ print(f"  Overall Recall = {overall_recall_pct:.2f}%")
 
 # LIST PASS OR FAIL
 # ---------------------------
-# Pass/fail: 95% requirement
+# Pass/fail: 95% requirement & confidence threshold >= 0.9 (90%)
 
 THRESHOLD = 0.95
-if overall_recall >= THRESHOLD:
-    print(f"\nRESULT: PASS (overall recall {overall_recall_pct:.2f}% ≥ 95%)")
+
+if not threshold_ok:
+    print(f"\nRESULT: FAIL (overall recall {overall_recall_pct:.2f}%, confidence threshold is < 0.9\n")
+    print(f"Current Confidence Threshold: {CONF_THRES:.2f}\n")
+elif overall_recall >= THRESHOLD:
+    print(f"\nRESULT: PASS (overall recall {overall_recall_pct:.2f}% ≥ 95%)\n")
 else:
-    print(f"\nRESULT: FAIL (overall recall {overall_recall_pct:.2f}% < 95%)")
+    print(f"\nRESULT: FAIL (overall recall {overall_recall_pct:.2f}% < 95%)\n")
