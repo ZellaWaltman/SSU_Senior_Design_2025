@@ -8,7 +8,7 @@ from ultralytics import YOLO
 # CONFIG
 # ---------------------------
 
-MODEL_PATH = "/home/robotics-3/runs/detect/train/weights/best.pt" # path to yolov8 model
+MODEL_PATH = "models/small_blocks.blob" # path to blob model
 N_FRAMES   = 300 # number of frames for test
 CONF_THRES = 0.9 # confidence threshold
 SHOW_WINDOW = True # False for headless testing
@@ -24,16 +24,12 @@ CLASS_ID_TO_NAME = {
     0: "Block_Blue",
     1: "Block_Green",
     2: "Block_Red",
-    3: "End_Effector",
-    4: "Robot_Arm",
 }
 
 ALL_CLASSES = [
     "Block_Blue",
     "Block_Green",
     "Block_Red",
-    "End_Effector",
-    "Robot_Arm"
 ]
 
 # ---------------------------
@@ -70,7 +66,7 @@ pipeline = dai.Pipeline()
 
 # Create RGB Camera
 cam_rgb = pipeline.createColorCamera()
-cam_rgb.setPreviewSize(1280, 720)
+cam_rgb.setPreviewSize(512, 512)
 cam_rgb.setInterleaved(False) # Seperate color channels
 cam_rgb.setFps(30)
 
